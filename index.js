@@ -1,70 +1,118 @@
-const express = require('express')
-const mongoose = require('mongoose')
 
-mongoose.connect('mongodb://localhost/my_database',{useNewUrlParser: true})
+const express = require('express');
+const mongoose = require('mongoose');
+const session = require('express-session');
+const { default: MongoStore } = require('connect-mongo');
+const fileUpload = require('express-fileupload');
+const flash = require('connect-flash');
 
-const app = new express()
-const ejs = require('ejs')
-const { resourceUsage } = require('process')
+const validateMiddleware = require('./middleware/validationMiddleware');
+const authMiddleware = require('./middleware/authMiddleware');
+const redirectIfAuthenticatedMiddleware = require('./middleware/redirectIfAuthenticatedMiddleware');
 
-const fileUpload = require('express-fileupload')
-const validateMiddleWare = require('./middleware/validationMiddleware')
-const expressSession = require('express-session')
-const authMiddleware = require('./middleware/authMiddleware')
-const redirectIfAuthenticatedMiddleware = require('./middleware/redirectIfAuthenticatedMiddleware')
-const flash = require('connect-flash')
+const app = express();
+const PORT = process.env.PORT || 4000;
+const MONGO_URL = 'mongodb://127.0.0.1:27017/my_database';
 
-app.set('view engine','ejs')
+// View engine
+app.set('view engine', 'ejs');
 
-global.loggedIn = null;
+// Static files and request parsing
+app.use(express.static('public'));
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 
+// File uploads
+app.use(fileUpload());
 
-app.use(express.static('public'))
-app.use(express.json())
-app.use(express.urlencoded())
-app.use(fileUpload())
-app.use('/posts/store',validateMiddleWare)
-app.use(expressSession({
-    secret: 'keyboard cat'
-}))
-app.use(flash())
-app.use("*",(req,res,next)=>{
-    loggedIn = req.session.userId
-    next()
-})
+// Session configuration
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'dev-only-change-this-secret',
+    resave: false,
+    saveUninitialized: false,
+    store: MongoStore.create({
+        mongoUrl: MONGO_URL
+    }),
+    cookie: {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 24 * 60 * 60 * 1000
+    }
+}));
 
-app.listen(4000,()=>{
-    console.log('App listening on port 4000')
-})
+// Flash messages must come after session middleware
+app.use(flash());
 
-const newPostController = require('./controllers/newPost')
-const homeController = require('./controllers/home')
-const storePostController = require('./controllers/storePost')
-const getPostController = require('./controllers/getPost')
-const newUserController = require('./controllers/newUser')
-const storeUserController = require('./controllers/storeUser')
-const loginController = require('./controllers/login')
-const loginUserController = require('./controllers/loginUser')
-const logoutController = require('./controllers/logout')
+// Make login status available to all EJS templates
+app.use((req, res, next) => {
+    res.locals.loggedIn = req.session.userId || null;
+    next();
+});
 
-app.get('/', homeController)
+// Validation middleware
+app.use('/posts/store', validateMiddleware);
 
-app.get('/post/:id',getPostController)
+// Controllers
+const newPostController = require('./controllers/newPost');
+const homeController = require('./controllers/home');
+const storePostController = require('./controllers/storePost');
+const getPostController = require('./controllers/getPost');
+const newUserController = require('./controllers/newUser');
+const storeUserController = require('./controllers/storeUser');
+const loginController = require('./controllers/login');
+const loginUserController = require('./controllers/loginUser');
+const logoutController = require('./controllers/logout');
 
-app.get('/posts/new',authMiddleware, newPostController)
+// Routes
+app.get('/', homeController);
+app.get('/post/:id', getPostController);
 
-app.post('/posts/store',authMiddleware, storePostController)
+app.get('/posts/new', authMiddleware, newPostController);
+app.post('/posts/store', authMiddleware, storePostController);
 
-app.get('/auth/register',redirectIfAuthenticatedMiddleware,newUserController)
+app.get(
+    '/auth/register',
+    redirectIfAuthenticatedMiddleware,
+    newUserController
+);
+app.post(
+    '/users/register',
+    redirectIfAuthenticatedMiddleware,
+    storeUserController
+);
 
-app.post('/users/register',redirectIfAuthenticatedMiddleware,storeUserController)
+app.get(
+    '/auth/login',
+    redirectIfAuthenticatedMiddleware,
+    loginController
+);
+app.post(
+    '/users/login',
+    redirectIfAuthenticatedMiddleware,
+    loginUserController
+);
 
-app.get('/auth/login',redirectIfAuthenticatedMiddleware, loginController)
+app.get('/auth/logout', logoutController);
 
-app.post('/users/login',redirectIfAuthenticatedMiddleware,loginUserController)
+// 404 handler
+app.use((req, res) => {
+    res.status(404).render('notfound');
+});
 
-app.get('/auth/logout', logoutController)
+// Connect to MongoDB before starting the server
+async function startServer() {
+    try {
+        await mongoose.connect(MONGO_URL);
+        console.log('MongoDB connected successfully');
 
-app.use((req,res)=>{
-    res.render('notfound')
-})
+        app.listen(PORT, () => {
+            console.log(`App listening on port ${PORT}`);
+        });
+    } catch (error) {
+        console.error('Failed to start application:', error);
+        process.exitCode = 1;
+    }
+}
+
+startServer();

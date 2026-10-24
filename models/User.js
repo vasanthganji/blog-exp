@@ -1,14 +1,13 @@
-const mongoose = require('mongoose')
 
-const Schema = mongoose.Schema;
+const mongoose = require('mongoose');
+const bcrypt = require('bcrypt');
 
-const bcrypt = require('bcrypt')
-
-const UserSchema = new Schema({
+const UserSchema = new mongoose.Schema({
     username: {
         type: String,
         required: true,
-        unique: true
+        unique: true,
+        trim: true
     },
     password: {
         type: String,
@@ -16,13 +15,15 @@ const UserSchema = new Schema({
     }
 });
 
-UserSchema.pre('save',function(next){
-    const user = this
-    bcrypt.hash(user.password, 10,(error, hash)=>{
-        user.password = hash
-        next()
-    })
-})
+UserSchema.pre('save', async function () {
+    // Hash the password only when it has been changed
+    if (!this.isModified('password')) {
+        return;
+    }
 
-const User = mongoose.model('User',UserSchema);
+    this.password = await bcrypt.hash(this.password, 10);
+});
+
+const User = mongoose.model('User', UserSchema);
+
 module.exports = User;
