@@ -12,7 +12,6 @@ const redirectIfAuthenticatedMiddleware = require('./middleware/redirectIfAuthen
 
 const app = express();
 const PORT = process.env.PORT || 4000;
-const MONGO_URL = 'mongodb://127.0.0.1:27017/my_database';
 
 // View engine
 app.set('view engine', 'ejs');
@@ -31,8 +30,8 @@ app.use(session({
     resave: false,
     saveUninitialized: false,
     store: MongoStore.create({
-        mongoUrl: MONGO_URL
-    }),
+    mongoUrl: process.env.MONGODB_URI
+}),
     cookie: {
         httpOnly: true,
         sameSite: 'lax',
@@ -101,17 +100,22 @@ app.use((req, res) => {
 });
 
 // Connect to MongoDB before starting the server
+
 async function startServer() {
     try {
-        await mongoose.connect(MONGO_URL);
-        console.log('MongoDB connected successfully');
+        if (!process.env.MONGODB_URI) {
+            throw new Error('MONGODB_URI is missing');
+        }
 
-        app.listen(PORT, () => {
+        await mongoose.connect(process.env.MONGODB_URI);
+        console.log('MongoDB Atlas connected successfully');
+
+        app.listen(PORT, '0.0.0.0', () => {
             console.log(`App listening on port ${PORT}`);
         });
     } catch (error) {
-        console.error('Failed to start application:', error);
-        process.exitCode = 1;
+        console.error('Failed to start application:', error.message);
+        process.exit(1);
     }
 }
 
