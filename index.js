@@ -11,6 +11,11 @@ const authMiddleware = require('./middleware/authMiddleware');
 const redirectIfAuthenticatedMiddleware = require('./middleware/redirectIfAuthenticatedMiddleware');
 
 const app = express();
+
+if (process.env.NODE_ENV === 'production') {
+    app.set('trust proxy', 1);
+}
+
 const PORT = process.env.PORT || 4000;
 
 // View engine
